@@ -79,7 +79,7 @@ h2{font-size:clamp(32px,4.4vw,54px);max-width:720px}.sub{color:var(--mut);max-wi
 .why{background:linear-gradient(135deg,#dbeafb,#eaf2fc 60%,#ffeedb);color:var(--ink);border-radius:44px;margin:0 2%;padding:80px 0}.why h2{color:var(--ink)}.why .sub{color:var(--mut)}
 .pts{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}.pt{display:flex;gap:16px;padding:22px;border:1px solid #fff;background:#ffffffb0;border-radius:18px}
 .pt b{display:block;color:var(--ink);font-size:18px}.pt span{font-size:15px;color:var(--mut)}.pt i{flex:none;width:34px;height:34px;border-radius:50%;background:var(--cyan);color:#fff;display:grid;place-items:center;font-style:normal;font-weight:800}
-.chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}.chips span{padding:9px 18px;border-radius:99px;border:1px solid var(--line);background:var(--ice);font-weight:500;font-size:15px;transition:.25s}.chips span:hover{background:var(--cyan);color:#fff;transform:scale(1.06)}
+.chips{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}.chips span{padding:9px 18px;border-radius:99px;border:1px solid var(--line);background:var(--ice);font-weight:500;font-size:15px;transition:.25s;cursor:pointer}.chips span:hover{background:var(--cyan);color:#fff;transform:scale(1.06)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:56px;align-items:center}
 /* faq */
 .faq{display:grid;gap:12px;max-width:820px}.faq details{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px 26px}
@@ -129,7 +129,7 @@ footer{padding:60px 0 100px;font-size:15px}.fg{display:grid;grid-template-column
 <div class="top">Atención a domicilio en toda Bogotá · <a href="tel:+573112955131">Llámanos: 311 295 5131</a></div>
 <header><div class="wrap nav">
 <a class="logo" href="#inicio" aria-label="Refrimathy, inicio"><svg><use href="#lg"/></svg><span>refrim<i>athy</i><small>Servicio técnico · Bogotá</small></span></a>
-<nav aria-label="Principal"><ul><li><a href="#servicios">Servicios</a></li><li><a href="#trabajo">Trabajos</a></li><li><a href="#proceso">Cómo trabajamos</a></li><li><a href="#cobertura">Cobertura</a></li><li><a href="#preguntas">Preguntas</a></li></ul></nav>
+<nav aria-label="Principal"><ul><li><a href="#servicios">Servicios</a></li><li><a href="#trabajo">Trabajos</a></li><li><a href="#proceso">Cómo trabajamos</a></li><li><a href="#cobertura">Cobertura</a></li><li><a href="#preguntas">Preguntas</a></li><li><a href="dashboard.html" style="color:var(--cyan);font-weight:700">📊 Dashboard</a></li></ul></nav>
 <a class="btn wa sm hd" href="https://wa.me/573112955131?text=Hola%2C%20quiero%20agendar%20una%20visita%20t%C3%A9cnica%20en%20Bogot%C3%A1." target="_blank" rel="noopener">Agendar por WhatsApp</a>
 </div></header>
 
@@ -213,7 +213,7 @@ footer{padding:60px 0 100px;font-size:15px}.fg{display:grid;grid-template-column
 <div><h4>Servicios</h4><a href="#servicios">Neveras y lavadoras</a><a href="#servicios">Estufas y calentadores</a><a href="#servicios">Aire acondicionado</a><a href="#servicios">Refrigeración comercial</a></div>
 <div><h4>Contacto</h4><a href="https://wa.me/573112955131" target="_blank" rel="noopener">WhatsApp: 311 295 5131</a><a href="tel:+573112955131">Llamar al equipo</a><a href="mailto:coordinacion.refrimathy@gmail.com">coordinacion.refrimathy@gmail.com</a><p>Bogotá D.C., Colombia</p></div>
 </div>
-<div class="wrap"><p style="margin-top:36px;font-size:13px">© <span id="y"></span> Refrimathy. Todos los derechos reservados. Atención sujeta a coordinación y disponibilidad.</p></div></footer>
+<div class="wrap" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;margin-top:36px"><p style="font-size:13px">© <span id="y"></span> Refrimathy. Todos los derechos reservados. Atención sujeta a coordinación y disponibilidad.</p><a href="dashboard.html" style="font-size:12.5px;color:var(--mut);opacity:.75">Panel de Estadísticas</a></div></footer>
 
 <a class="fab" href="https://wa.me/573112955131?text=Hola%2C%20quiero%20consultar%20un%20servicio%20t%C3%A9cnico%20en%20Bogot%C3%A1." target="_blank" rel="noopener" aria-label="Escribir por WhatsApp"><b>¿Necesitas ayuda? Escríbenos</b><span><svg><use href="#wa"/></svg></span></a>
 
@@ -238,7 +238,7 @@ if(!matchMedia('(prefers-reduced-motion:reduce)').matches){requestAnimationFrame
 const n=document.querySelector('[data-n]');let c=0;const iv=setInterval(()=>{n.textContent=++c+(c>=7?'+':'');if(c>=7)clearInterval(iv)},140);
 // reveal
 const io=new IntersectionObserver(e=>e.forEach(x=>{if(x.isIntersecting){x.target.style.transitionDelay=(Array.from(x.target.parentNode.children).indexOf(x.target)*90)+'ms';x.target.classList.add('in');io.unobserve(x.target)}}),{threshold:.15});
-document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+document.querySelectorAll('.rv').forEach(el=>io.observe(el));document.querySelectorAll('#cobertura .chips span').forEach(ch=>ch.addEventListener('click',()=>window.open(WA+encodeURIComponent('Hola, ¿tienen cobertura de servicio técnico en '+ch.textContent.trim()+', Bogotá?'),'_blank','noopener')));
 </script>
-</body>
+<script src="analytics-tracker.js" defer></script></body>
 </html>
