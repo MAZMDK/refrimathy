@@ -1,7 +1,8 @@
 /**
  * Refrimathy Analytics & Database Engine (analytics-tracker.js)
- * Registra visitas, visitantes únicos, secciones vistas, tiempo por sección,
- * profundidad de scroll, clics en servicios, barrios, FAQ y conversiones a WhatsApp/Llamadas.
+ * Registra visitas, visitantes únicos, secciones vistas (incluyendo Quiénes Somos y Contacto),
+ * tiempo por sección, profundidad de scroll, clics en servicios, barrios, FAQ,
+ * consentimiento de cookies y conversiones a WhatsApp/Llamadas/Formulario.
  * Soporta almacenamiento en LocalStorage, BroadcastChannel en tiempo real,
  * endpoint Netlify (/.netlify/functions/analytics) y Supabase Cloud REST API.
  */
@@ -14,7 +15,8 @@
     VISITOR_ID: 'refrimathy_visitor_id_v1',
     VISIT_COUNT: 'refrimathy_visit_count_v1',
     CONFIG: 'refrimathy_db_config_v1',
-    HEARTBEAT: 'refrimathy_live_visitors_v1'
+    HEARTBEAT: 'refrimathy_live_visitors_v1',
+    COOKIE_CONSENT: 'refrimathy_cookie_consent_v1'
   };
 
   const MAX_LOCAL_SESSIONS = 1500;
@@ -50,6 +52,23 @@
     const merged = { ...getConfig(), ...newConfig };
     localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(merged));
     return merged;
+  }
+
+  function getCookieConsent() {
+    return safeParse(localStorage.getItem(STORAGE_KEYS.COOKIE_CONSENT), null);
+  }
+
+  function saveCookieConsent(consentData) {
+    const payload = {
+      necessary: true,
+      analytics: consentData.analytics !== false,
+      preferences: consentData.preferences !== false,
+      status: consentData.status || 'accepted',
+      updatedAt: new Date().toISOString()
+    };
+    localStorage.setItem(STORAGE_KEYS.COOKIE_CONSENT, JSON.stringify(payload));
+    broadcastUpdate('cookie_consent', payload);
+    return payload;
   }
 
   function getSessions() {
@@ -93,7 +112,12 @@
     else if (/firefox|fxios/i.test(ua)) browser = 'Firefox';
     else if (/safari/i.test(ua)) browser = 'Safari';
 
-    return { device, os, browser, screen: `${window.screen.width}x${window.screen.height}` };
+    return {
+      device,
+      os,
+      browser,
+      screen: typeof window !== 'undefined' && window.screen ? `${window.screen.width}x${window.screen.height}` : '1920x1080'
+    };
   }
 
   function parseTrafficSource() {
@@ -139,7 +163,6 @@
   async function syncToCloud(type, record) {
     const cfg = getConfig();
 
-    // 1. Supabase REST API
     if (cfg.supabaseUrl && cfg.supabaseAnonKey) {
       const table = type === 'session' ? 'analytics_sessions' : 'analytics_events';
       const url = `${cfg.supabaseUrl.replace(/\/$/, '')}/rest/v1/${table}`;
@@ -161,12 +184,9 @@
           }),
           keepalive: true
         });
-      } catch (_) {
-        // Silencioso en caso de fallo de red
-      }
+      } catch (_) {}
     }
 
-    // 2. Netlify Serverless Function
     if (cfg.useNetlifyEndpoint) {
       try {
         await fetch('/.netlify/functions/analytics', {
@@ -187,9 +207,13 @@
     }
   }
 
-  // Solo iniciar el rastreo automático cuando estamos en la página pública (no en el dashboard)
+  let activeSessionRef = null;
+  let activeRecordEventFn = null;
+  let activeObserveSectionsFn = null;
+
   function initPageTracker() {
     if (window.REFRIMATHY_DISABLE_AUTO_TRACK) return;
+    if (window.location.pathname.includes('dashboard')) return;
 
     const cfg = getConfig();
     if (cfg.excludeAdminVisits && localStorage.getItem('refrimathy_is_admin') === '1') {
@@ -243,6 +267,29 @@
       is_bounce: true
     };
 
+    activeSessionRef = session;
+
+    let currentActiveSection = 'inicio';
+    let lastActionText = 'Entró a la página de inicio';
+
+    function updateHeartbeat() {
+      const heartbeats = safeParse(localStorage.getItem(STORAGE_KEYS.HEARTBEAT), {});
+      const now = Date.now();
+      Object.keys(heartbeats).forEach((k) => {
+        if (now - heartbeats[k].lastSeen > 45000) delete heartbeats[k];
+      });
+      heartbeats[sessionId] = {
+        sessionId,
+        visitorId,
+        device: session.device,
+        source: session.source,
+        currentSection: currentActiveSection,
+        lastAction: lastActionText,
+        lastSeen: now
+      };
+      localStorage.setItem(STORAGE_KEYS.HEARTBEAT, JSON.stringify(heartbeats));
+    }
+
     function persistSession() {
       session.duration_sec = Math.max(1, Math.round((Date.now() - startMs) / 1000));
       session.updated_at = new Date().toISOString();
@@ -295,36 +342,14 @@
       return ev;
     }
 
-    function updateHeartbeat() {
-      const heartbeats = safeParse(localStorage.getItem(STORAGE_KEYS.HEARTBEAT), {});
-      const now = Date.now();
-      // Limpiar sesiones inactivas (> 45s)
-      Object.keys(heartbeats).forEach((k) => {
-        if (now - heartbeats[k].lastSeen > 45000) delete heartbeats[k];
-      });
-      heartbeats[sessionId] = {
-        sessionId,
-        visitorId,
-        device: session.device,
-        source: session.source,
-        currentSection: currentActiveSection,
-        lastAction: lastActionText,
-        lastSeen: now
-      };
-      localStorage.setItem(STORAGE_KEYS.HEARTBEAT, JSON.stringify(heartbeats));
-    }
+    activeRecordEventFn = recordEvent;
 
-    let currentActiveSection = 'inicio';
-    let lastActionText = 'Entró a la página de inicio';
-
-    // Registrar vista inicial
     persistSession();
     recordEvent('pageview', 'page_enter', 'Página Principal Refrimathy', {
       title: document.title,
       url: window.location.href
     });
 
-    // 1. Medir scroll máximo
     function onScroll() {
       const docHeight = Math.max(
         document.body.scrollHeight,
@@ -345,21 +370,23 @@
     }
     window.addEventListener('scroll', onScroll, { passive: true });
 
-    // 2. Medir qué secciones ven y cuánto tiempo pasan en cada una
     const sectionMap = [
       { selector: '.hero', id: 'inicio', name: 'Hero / Inicio' },
+      { selector: '#quienes-somos', id: 'quienes_somos', name: 'Quiénes Somos (Historia y Valores)' },
       { selector: '#servicios', id: 'servicios', name: 'Servicios Técnicos' },
       { selector: '#trabajo', id: 'trabajo', name: 'Galería Nuestro Trabajo' },
       { selector: '#proceso', id: 'proceso', name: 'Cómo Trabajamos (4 Pasos)' },
       { selector: '.why', id: 'porque', name: 'Por Qué Refrimathy' },
       { selector: '#cobertura', id: 'cobertura', name: 'Cobertura en Bogotá' },
       { selector: '#preguntas', id: 'preguntas', name: 'Preguntas Frecuentes (FAQ)' },
-      { selector: '.final', id: 'cta_final', name: 'Llamado a la Acción Final' }
+      { selector: '#contacto, .final', id: 'cta_final', name: 'Centro de Contacto y Agendamiento' }
     ];
 
     const visibleSections = new Set(['inicio']);
+    let secObserver = null;
+
     if ('IntersectionObserver' in window) {
-      const secObserver = new IntersectionObserver(
+      secObserver = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
             const secId = entry.target.getAttribute('data-analytics-sec');
@@ -380,20 +407,28 @@
             }
           });
         },
-        { threshold: 0.35 }
+        { threshold: 0.25 }
       );
+    }
 
+    function observeSections() {
+      if (!secObserver) return;
       sectionMap.forEach((s) => {
         const el = document.querySelector(s.selector);
-        if (el) {
+        if (el && !el.hasAttribute('data-analytics-observed')) {
           el.setAttribute('data-analytics-sec', s.id);
           el.setAttribute('data-analytics-name', s.name);
+          el.setAttribute('data-analytics-observed', '1');
           secObserver.observe(el);
         }
       });
     }
 
-    // Contador de segundos por sección visible cada 2 segundos
+    activeObserveSectionsFn = observeSections;
+    observeSections();
+    setTimeout(observeSections, 600);
+    setTimeout(observeSections, 1800);
+
     setInterval(() => {
       if (document.hidden) return;
       visibleSections.forEach((secId) => {
@@ -402,11 +437,14 @@
       persistSession();
     }, 2000);
 
-    // 3. Rastrear clics en tarjetas de servicios, botones de WhatsApp, llamadas, barrios y FAQ
     document.addEventListener('click', (e) => {
-      const card = e.target.closest('#sv .card');
+      const card = e.target.closest('#sv .card, [data-service-card]');
       if (card) {
-        const serviceName = (card.querySelector('h3')?.textContent || 'Servicio').trim();
+        const serviceName = (
+          card.getAttribute('data-service-name') ||
+          card.querySelector('h3')?.textContent ||
+          'Servicio'
+        ).trim();
         if (!session.services_clicked.includes(serviceName)) {
           session.services_clicked.push(serviceName);
         }
@@ -421,11 +459,10 @@
         return;
       }
 
-      // Chips de barrios en Cobertura
-      const chip = e.target.closest('#cobertura .chips span');
+      const chip = e.target.closest('#cobertura .chips span, [data-barrio-chip]');
       if (chip) {
-        const barrio = chip.textContent.trim();
-        if (!session.barrios_clicked.includes(barrio)) {
+        const barrio = (chip.getAttribute('data-barrio-name') || chip.textContent || '').trim();
+        if (barrio && !session.barrios_clicked.includes(barrio)) {
           session.barrios_clicked.push(barrio);
         }
         lastActionText = `Consultó barrio: ${barrio}`;
@@ -433,7 +470,20 @@
         return;
       }
 
-      // Enlaces (WhatsApp, Teléfono, Correo, Navegación)
+      const faqSummary = e.target.closest('#preguntas summary, [data-faq-question]');
+      if (faqSummary) {
+        const question = (
+          faqSummary.getAttribute('data-faq-question') ||
+          faqSummary.textContent ||
+          'Pregunta'
+        ).trim().replace(/[+−-]$/, '').trim();
+        if (question && !session.faqs_opened.includes(question)) {
+          session.faqs_opened.push(question);
+          lastActionText = `Leyó FAQ: ${question}`;
+          recordEvent('engagement', 'faq_open', question, { question });
+        }
+      }
+
       const link = e.target.closest('a');
       if (link) {
         const href = link.getAttribute('href') || '';
@@ -444,8 +494,9 @@
           if (link.classList.contains('fab')) locationTag = 'Botón Flotante WhatsApp';
           else if (link.closest('header')) locationTag = 'Header WhatsApp';
           else if (link.closest('.hero')) locationTag = 'Hero Principal WhatsApp';
+          else if (link.closest('#quienes-somos')) locationTag = 'Quiénes Somos WhatsApp';
           else if (link.closest('#cobertura')) locationTag = 'Confirmar Barrio WhatsApp';
-          else if (link.closest('.final')) locationTag = 'Banner Final WhatsApp';
+          else if (link.closest('#contacto') || link.closest('.final')) locationTag = 'Formulario Contacto WhatsApp';
           else if (link.closest('footer')) locationTag = 'Footer WhatsApp';
 
           session.converted = true;
@@ -462,7 +513,7 @@
         } else if (href.startsWith('mailto:')) {
           session.converted = true;
           session.conversion_type = 'Correo Electrónico';
-          session.conversion_target = href.replace('mailto:', '');
+          session.conversion_target = href.replace('mailto:', '').split('?')[0];
           lastActionText = 'Clic en correo electrónico';
           recordEvent('conversion', 'email_click', 'Correo Electrónico', { href });
         } else if (href.startsWith('#')) {
@@ -472,21 +523,6 @@
       }
     });
 
-    // 4. Rastrear apertura de preguntas frecuentes (FAQ)
-    document.querySelectorAll('#preguntas details').forEach((det) => {
-      det.addEventListener('toggle', () => {
-        if (det.open) {
-          const question = (det.querySelector('summary')?.textContent || 'Pregunta').trim();
-          if (!session.faqs_opened.includes(question)) {
-            session.faqs_opened.push(question);
-          }
-          lastActionText = `Leyó FAQ: ${question}`;
-          recordEvent('engagement', 'faq_open', question, { question });
-        }
-      });
-    });
-
-    // Guardar al salir o cambiar de pestaña
     window.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
         persistSession();
@@ -495,7 +531,25 @@
     window.addEventListener('pagehide', persistSession);
   }
 
-  // Generador de datos realistas de demostración para evaluar o inicializar la base de datos
+  function recordCustomConversion(type, target, serviceName, barrioName) {
+    if (!activeSessionRef) return;
+    if (serviceName && !activeSessionRef.services_clicked.includes(serviceName)) {
+      activeSessionRef.services_clicked.push(serviceName);
+    }
+    if (barrioName && !activeSessionRef.barrios_clicked.includes(barrioName)) {
+      activeSessionRef.barrios_clicked.push(barrioName);
+    }
+    activeSessionRef.converted = true;
+    activeSessionRef.conversion_type = type || 'Formulario Contacto';
+    activeSessionRef.conversion_target = target || serviceName || 'Contacto Directo';
+    if (activeRecordEventFn) {
+      activeRecordEventFn('conversion', 'contact_form_submit', `${type}: ${target}`, {
+        service: serviceName,
+        barrio: barrioName
+      });
+    }
+  }
+
   function seedDemoDatabase(count = 68) {
     const services = [
       'Neveras',
@@ -515,7 +569,8 @@
       '¿Atienden en toda Bogotá?',
       '¿Qué debo enviar para pedir servicio?',
       '¿Reparan neveras y equipos de negocios?',
-      '¿Reparan sin explicarme antes?'
+      '¿Reparan sin explicarme antes?',
+      '¿Qué garantía tienen las reparaciones?'
     ];
     const sources = [
       { source: 'Google Orgánico', medium: 'organic', weight: 0.44 },
@@ -531,7 +586,17 @@
       { device: 'Computador', os: 'macOS', browser: 'Safari', screen: '1440x900', weight: 0.04 },
       { device: 'Tablet', os: 'Android', browser: 'Chrome', screen: '800x1280', weight: 0.03 }
     ];
-    const allSections = ['inicio', 'servicios', 'trabajo', 'proceso', 'porque', 'cobertura', 'preguntas', 'cta_final'];
+    const allSections = [
+      'inicio',
+      'quienes_somos',
+      'servicios',
+      'trabajo',
+      'proceso',
+      'porque',
+      'cobertura',
+      'preguntas',
+      'cta_final'
+    ];
 
     function pickWeighted(items) {
       const r = Math.random();
@@ -558,7 +623,6 @@
     const now = Date.now();
 
     for (let i = 0; i < count; i++) {
-      // Distribuir en los últimos 14 días con mayor concentración en los días recientes y horas laborales (7am - 8pm)
       const daysAgo = Math.floor(Math.pow(Math.random(), 1.35) * 14);
       const hour = Math.floor(7 + Math.random() * 14);
       const min = Math.floor(Math.random() * 60);
@@ -573,13 +637,23 @@
       const src = pickWeighted(sources);
       const dev = pickWeighted(devices);
 
-      // Cuántas secciones vio
-      const reachCount = Math.random() < 0.16 ? 1 : Math.floor(2 + Math.random() * (allSections.length - 1));
+      const reachCount = Math.random() < 0.14 ? 1 : Math.floor(2 + Math.random() * (allSections.length - 1));
       const viewed = allSections.slice(0, reachCount);
       const secDurations = {};
       let totalDur = 0;
       viewed.forEach((sec) => {
-        const base = sec === 'servicios' ? 24 : sec === 'inicio' ? 16 : sec === 'preguntas' ? 20 : 11;
+        const base =
+          sec === 'servicios'
+            ? 24
+            : sec === 'quienes_somos'
+            ? 19
+            : sec === 'inicio'
+            ? 16
+            : sec === 'preguntas'
+            ? 20
+            : sec === 'cta_final'
+            ? 18
+            : 12;
         const dur = Math.max(3, Math.round(base * (0.5 + Math.random() * 1.3)));
         secDurations[sec] = dur;
         totalDur += dur;
@@ -654,10 +728,10 @@
         });
       }
 
-      if (!isBounce && Math.random() < 0.42) {
+      if (!isBounce && Math.random() < 0.44) {
         converted = true;
         const rConv = Math.random();
-        if (rConv < 0.62 && clickedServices.length > 0) {
+        if (rConv < 0.58 && clickedServices.length > 0) {
           conversionType = 'WhatsApp Servicio';
           conversionTarget = clickedServices[0];
           events.push({
@@ -672,8 +746,14 @@
             source: src.source,
             is_demo: true
           });
-        } else if (rConv < 0.84) {
-          const btns = ['Hero Principal WhatsApp', 'Botón Flotante WhatsApp', 'Confirmar Barrio WhatsApp', 'Banner Final WhatsApp'];
+        } else if (rConv < 0.85) {
+          const btns = [
+            'Hero Principal WhatsApp',
+            'Formulario Contacto WhatsApp',
+            'Botón Flotante WhatsApp',
+            'Confirmar Barrio WhatsApp',
+            'Quiénes Somos WhatsApp'
+          ];
           conversionType = 'WhatsApp';
           conversionTarget = btns[Math.floor(Math.random() * btns.length)];
           events.push({
@@ -775,10 +855,14 @@
     saveEvents,
     getConfig,
     saveConfig,
+    getCookieConsent,
+    saveCookieConsent,
     getLiveVisitors,
     seedDemoDatabase,
     clearDemoData,
     clearAllDatabase,
+    recordCustomConversion,
+    observeSections: () => activeObserveSectionsFn && activeObserveSectionsFn(),
     channel
   };
 

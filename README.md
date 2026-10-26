@@ -1,25 +1,41 @@
-# Refrimathy — Servicio técnico en Bogotá + Dashboard de Analítica
+# Refrimathy — Servicio técnico en Bogotá + Dashboard de Analítica (React + Vite)
 
-## Archivos del sitio
+Sitio web oficial y plataforma de analítica en tiempo real para **Refrimathy**, construido con **React 18** y **Vite**, con animaciones fluidas, diseño responsivo libre de espacios vacíos y cumplimiento normativo colombiano.
 
-- `index.html`: página principal, estilos, interacciones, etiquetas para buscadores, datos estructurados y rastreador automático de visitas.
-- `dashboard.html`: **Dashboard y Base de Datos de Analítica** para consultar cuántas personas entraron, qué secciones vieron, cuánto tiempo permanecieron, qué servicios y barrios consultaron, y cuántas conversiones a WhatsApp o llamadas se generaron.
-- `analytics-tracker.js`: motor de rastreo y base de datos local/cloud en tiempo real (sincroniza visitas entre `index.html` y `dashboard.html` y soporta Supabase REST API).
-- `supabase-analytics.sql`: esquema SQL listo para ejecutar en Supabase si deseas centralizar las visitas de todos los dispositivos en la nube.
-- `robots.txt` y `sitemap.xml`: acceso e índice del sitio para buscadores.
-- `refrimathy-logo.png`: recurso gráfico de marca disponible para el sitio.
+## Estructura del Proyecto
 
-## Cómo usar el Dashboard de Estadísticas y Base de Datos
+- `index.html`, `privacidad.html`, `cookies.html`, `404.html`, `dashboard.html`: Puntos de entrada multi-página y SPA gestionados por Vite y React.
+- `src/`:
+  - `App.jsx` y `main.jsx`: Enrutador híbrido (soporta rutas limpias y `.html`), control de animaciones `IntersectionObserver` y sincronización analítica.
+  - `data/siteData.js`: Catálogo estructurado de servicios, marcas, localidades de Bogotá, historia de **Quiénes Somos**, preguntas frecuentes, **Cláusula de Privacidad (Ley 1581 de 2012)** y **Política de Cookies**.
+  - `components/`:
+    - `Navbar.jsx` y `Hero.jsx`: Encabezado con efecto cristal, menú móvil animado y termómetro interactivo (25 °C → 4 °C).
+    - `AboutUs.jsx`: Apartado **Quiénes Somos** con historia, misión, visión, valores corporativos y métricas de trayectoria (+7 años en Bogotá).
+    - `ServicesSection.jsx`: Catálogo filtrable de los 6 servicios técnicos con conexión directa al formulario de agendamiento y WhatsApp.
+    - `WorkAndProcess.jsx` y `CoverageAndFaq.jsx`: Galería de técnicos uniformados, proceso en 4 pasos, buscador interactivo de barrios de Bogotá y sección de preguntas frecuentes a dos columnas sin espacios en blanco.
+    - `ContactSection.jsx`: **Centro de Contacto y Agendamiento Rápido** libre de espacios en blanco, con tarjetas de atención directa y generador de solicitudes para WhatsApp y correo.
+    - `CookieBanner.jsx`, `CookiesPage.jsx` y `PrivacyPage.jsx`: Banner interactivo de consentimiento de cookies, panel de preferencias, Política de Cookies detallada y Cláusula de Privacidad con generador de solicitudes Habeas Data (ARCO).
+    - `NotFoundPage.jsx`: **Página de Error 404** personalizada con redireccionamiento automático regresivo hacia el inicio.
+    - `DashboardPage.jsx`: **Dashboard & Base de Datos de Analítica y Centro de Contacto** con métricas de las 9 secciones del sitio, embudo de conversión, despachador rápido de WhatsApp, exportación CSV/JSON y conexión a Supabase Cloud.
+- `public/analytics-tracker.js`: Motor de rastreo en tiempo real (`LocalStorage`, `BroadcastChannel` y `Supabase REST API`).
+- `supabase-analytics.sql`: Esquema SQL para centralizar la analítica en Supabase.
+- `netlify.toml` y `public/_redirects`: Configuración de despliegue automático y redireccionamiento 404 para Netlify.
 
-1. Abre `dashboard.html` en tu navegador (o visita `/dashboard.html` cuando esté publicado en `https://refrimathy.netlify.app/dashboard.html`).
-2. En la pestaña **📊 Resumen & Estadísticas** verás:
-   - **KPIs Ejecutivos**: Personas que entraron (visitantes totales, únicos y recurrentes), conversiones a WhatsApp/Llamadas, tiempo promedio en la página, profundidad de scroll, tasa de rebote y servicio/barrio líder.
-   - **¿Qué vieron en la página?**: Porcentaje de visitantes que vieron cada una de las 8 secciones del sitio y el tiempo promedio en segundos dedicado a cada sección.
-   - **Embudo de Conversión**: Entradas → Vieron Servicios → Interactuaron → Contactaron por WhatsApp o teléfono.
-   - **Estadísticas del Negocio**: Equipos más solicitados (*Neveras*, *Lavadoras*, *Estufas*, *Calentadores*, *Aire acondicionado*, *Refrigeración comercial*), barrios más consultados en Bogotá, preguntas frecuentes más leídas, horas pico, dispositivos y fuentes de tráfico.
-3. En **👥 Base de Datos de Visitantes** y **⚡ Registro de Eventos** puedes buscar, filtrar e inspeccionar el recorrido paso a paso de cada visitante y exportar la base de datos en **Excel (.CSV)** o **JSON**.
-4. En **🗄️ Conexión Cloud & Respaldos** puedes conectar un proyecto gratuito de **Supabase** pegando tu `Project URL` y `Anon Key` tras ejecutar `supabase-analytics.sql`.
+## Comandos de Desarrollo, Pruebas y Producción
 
-## Publicación e indexación
+```bash
+# Instalar dependencias
+npm install
 
-El sitio publicado es `https://refrimathy.netlify.app/`. Para que Google pueda indexarlo, el propietario debe verificar ese dominio en [Google Search Console](https://search.google.com/search-console/), enviar `https://refrimathy.netlify.app/sitemap.xml` y solicitar la indexación de la página de inicio.
+# Iniciar servidor de desarrollo (Vite)
+npm run dev
+
+# Ejecutar suite de pruebas automatizadas (Vitest + React Testing Library)
+npm test
+
+# Compilar versión optimizada para producción en dist/
+npm run build
+
+# Previsualizar compilación de producción
+npm run preview
+```
